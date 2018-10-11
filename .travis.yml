@@ -1,0 +1,6 @@
+language: haskell
+ghc:
+  - "8.0.2"
+
+# We have no tests for now, so override the default script
+script: cabal configure --enable-tests && cabal build
