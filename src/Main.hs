@@ -1,22 +1,11 @@
---- Module to render a png image
---- built from https://www.stackbuilders.com/tutorials/haskell/image-processing/
---- and Peter Shirley Ray Tracing in One weekend
---- Needs JuicyPixels and repa
---- flags for compiler: ?
---- -Odph
---- -rtsopts
---- -threaded
---- -fno-liberate-case
---- -funfolding-use-threshold1000
---- -funfolding-keeness-factor1000
---- -fllvm 
---- -optlo-O3
---- Also may need to install llvm
+{-|
+Interface for rendering images using the ray-tracer.
+-}
 
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TypeOperators   #-}
+{-# LANGUAGE TypeOperators #-}
 
-module Render where
+module Main where
+
 import Codec.Picture
 import Control.Monad
 import Control.Monad.ST
@@ -67,22 +56,22 @@ veclength v = sqrt (v `dot` v)
 sqveclength :: Vec3 -> Double
 sqveclength v = v `dot` v
 
-cross :: Vec3 -> Vec3 -> Vec3 
+cross :: Vec3 -> Vec3 -> Vec3
 cross (x1, y1, z1) (x2, y2, z2) = ((y1*z2-z1*y2), (-x1*z2 - z1*x2), (x1*y2 - y1*x2))
 
-unit_vector :: Vec3 -> Vec3 
+unit_vector :: Vec3 -> Vec3
 unit_vector v = v / (realToFrac (veclength v))
 
 --- Ray, Condiser changing to data record, would involve some refactoring
 type Ray = (Vec3,Vec3)
 
-origin :: Ray -> Vec3 
+origin :: Ray -> Vec3
 origin (o, _) = o
 
-direction :: Ray -> Vec3 
+direction :: Ray -> Vec3
 direction (_, d) = d
 
-point_at :: Ray -> Double -> Vec3 
+point_at :: Ray -> Double -> Vec3
 point_at (o,d) t = o + d*(realToFrac t)
 
 --- Hitable
@@ -112,26 +101,26 @@ hit (ro, rd) tmin tmax hitable =
             Just (genHitRecord negroot (ro,rd) hitable)
         else
             Nothing
-    else 
+    else
         Nothing
 
 --- helper for generating hitrecord
-genHitRecord :: Double -> Ray -> Hitable -> HitRecord    
-genHitRecord t ray hitable = 
+genHitRecord :: Double -> Ray -> Hitable -> HitRecord
+genHitRecord t ray hitable =
     let p = point_at ray t
     in HitRecord t p ((p - (center hitable)) / (realToFrac (radius hitable))) (material hitable)
 
 --- returns Just closest hit of ray to list of hitable objects or Nothing
 hit_in_list :: Ray -> Double -> Double -> [Hitable] -> Maybe HitRecord
-hit_in_list ray tmin tmax list = fst (foldl (hitacc ray tmin) (Nothing, tmax) list) 
+hit_in_list ray tmin tmax list = fst (foldl (hitacc ray tmin) (Nothing, tmax) list)
 
---- helper for hit in list 
+--- helper for hit in list
 hitacc :: Ray -> Double -> (Maybe HitRecord, Double) -> Hitable -> (Maybe HitRecord, Double)
 hitacc ray tmin (acc, closest) hitable =
     let maybehit = hit ray tmin closest hitable
     in case maybehit of
         Just rec -> (Just rec, t rec)
-        Nothing -> (acc, closest)         
+        Nothing -> (acc, closest)
 
 -- Get image with true color pixels from manifest Repa array.
 toImage :: Array U DIM2 Vec3 -> Image PixelRGB16
@@ -184,7 +173,7 @@ maxdepth = 50 :: Int
 camera = Camera (-2.0, -1.0, -1.0) (4.0, 0.0, 0.0) (0.0, 2.0, 0.0) (0.0, 0.0, 0.0)
 --- List of hitable object making up world
 
-sphere1 = Hitable (0.0, 0.0, -1.0) 0.5 (Diffuse 0.1 0.2 0.5) 
+sphere1 = Hitable (0.0, 0.0, -1.0) 0.5 (Diffuse 0.1 0.2 0.5)
 ground  = Hitable (0.0,-100.5,-1.0) 100.0 (Diffuse 0.8 0.8 0.0)
 sphere2 = Hitable (1.0, 0.0, -1.0) 0.5 (Metallic 0.8 0.6 0.2 0.3)
 sphere3 = Hitable (-1.0, 0.0, -1.0) 0.5 (Dielectric 1.5)
@@ -197,16 +186,16 @@ world   = [sphere1,sphere2,sphere3,ground]
 generateImgRepa :: Array D DIM2 Vec3
 generateImgRepa = R.fromFunction (Z :. nx :. ny) (calcPixelAt camera world)
 
---- function to calculate Pixel value at x y in a DIM2 Vec3 array/image plane 
+--- function to calculate Pixel value at x y in a DIM2 Vec3 array/image plane
 calcPixelAt :: Camera -> [Hitable] -> (Z :. Int :. Int) -> Vec3
 calcPixelAt cam world (Z :. x :. y) =
     let (red, green, blue) = aaPixel cam world x (ny-y)
     in (65534.99*(sqrt red), 65534.99*(sqrt green), 65534.99*(sqrt blue))
 
---- randomize pixel colors for aa 
+--- randomize pixel colors for aa
 --- ran into issues trying to make this parallel so resorted to list comp
 aaPixel :: Camera -> [Hitable] -> Int -> Int -> Vec3
-aaPixel cam world x y = 
+aaPixel cam world x y =
     let sumColor = sum [randPixel cam world x y s | s <- [1..ns]]
     in sumColor/(fromIntegral ns)
 
@@ -216,25 +205,25 @@ randPixel cam world x y s =
     let (xrand:yrand:tl)  = take 2 $ randoms (mkStdGen s) :: [Double]
         u      = ((fromIntegral x) + xrand) / (fromIntegral nx)
         v      = ((fromIntegral y) + yrand) / (fromIntegral ny)
-        ray    = get_ray cam u v 
-    in colorPixel ray world s 0  
+        ray    = get_ray cam u v
+    in colorPixel ray world s 0
 
 --- takes ray from camera to point on image plane and produces color
-colorPixel :: Ray -> [Hitable] -> Int -> Int -> Vec3    
+colorPixel :: Ray -> [Hitable] -> Int -> Int -> Vec3
 colorPixel ray world seed depth =
     let maybehit  = hit_in_list ray 0.001 (1.0/0.0) world
     in case maybehit of
         Just record ->
-            if depth >= maxdepth then 
+            if depth >= maxdepth then
                 (0.0,0.0,0.0)
-            else 
-                case (scatter ray record seed) of 
+            else
+                case (scatter ray record seed) of
                     Just (atten,scat) -> atten * (colorPixel scat world (seed+1) (depth+1))
-                    Nothing -> (0.0,0.0,0.0) 
-        Nothing -> 
+                    Nothing -> (0.0,0.0,0.0)
+        Nothing ->
             let ud = unit_vector (direction ray)
                 tt = 0.5*(g ud)+1.0
-            in (realToFrac (1.0-tt))*(1.0,1.0,1.0) + (realToFrac tt)*(0.5,0.7,1.0) 
+            in (realToFrac (1.0-tt))*(1.0,1.0,1.0) + (realToFrac tt)*(0.5,0.7,1.0)
 
 --- this sucks for getting random unit spheres
 random_in_unit_sphere :: Int -> Vec3
@@ -242,7 +231,7 @@ random_in_unit_sphere seed =
     let (x:y:z:tl) = take 3 $ randoms (mkStdGen seed) :: [Double]
         vec = (x,y,z)
         len = sqveclength vec
-    in if len >= 1 then random_in_unit_sphere (seed +1) else vec 
+    in if len >= 1 then random_in_unit_sphere (seed +1) else vec
 
 scatter :: Ray -> HitRecord -> Int -> Maybe (Vec3,Ray)
 scatter ray record seed =
@@ -250,42 +239,42 @@ scatter ray record seed =
         pp = p record
         n = normal record
     in case mat of
-        Diffuse x y z -> 
+        Diffuse x y z ->
             let target = pp + n + random_in_unit_sphere seed
                 alb    = (x,y,z)
-                scat   = (pp,target-pp) 
-            in Just (alb,scat) 
-        Metallic x y z f -> 
+                scat   = (pp,target-pp)
+            in Just (alb,scat)
+        Metallic x y z f ->
             let refl = reflect (unit_vector (direction ray)) n
                 alb  = (x,y,z)
                 fuzz = max 0.0 (min 1.0 f)
                 scat = (pp, refl + (random_in_unit_sphere seed)*(realToFrac fuzz))
-            in if (refl `dot` n) > 0 then 
+            in if (refl `dot` n) > 0 then
                 Just (alb,scat)
             else
-                Nothing 
-        Dielectric ref_idx -> 
-            let d = direction ray 
+                Nothing
+        Dielectric ref_idx ->
+            let d = direction ray
                 refl = reflect d n
                 ddn = d `dot` n
                 (out,ni_over_nt,cosine) = if ddn > 0 then
                         let out = -n
                             ni_over_nt = ref_idx
-                            cosine = ref_idx * ddn / (veclength d) 
-                        in (out,ni_over_nt,cosine) 
+                            cosine = ref_idx * ddn / (veclength d)
+                        in (out,ni_over_nt,cosine)
                     else
                         let out = n
                             ni_over_nt = 1.0 / ref_idx
                             cosine = -ddn/ (veclength d)
-                        in (out,ni_over_nt,cosine) 
+                        in (out,ni_over_nt,cosine)
                 maybeRefracted = refract d out ni_over_nt
-                refl_prob = case maybeRefracted of 
+                refl_prob = case maybeRefracted of
                     Just refrected -> schlick cosine ref_idx
                     Nothing -> 1.0
             in if (fst (random (mkStdGen seed)::(Double, StdGen))) < refl_prob then
                 Just ((1.0,1.0,1.0),(pp,refl))
-            else        
-                case maybeRefracted of 
+            else
+                case maybeRefracted of
                     Just refracted -> Just ((1.0,1.0,1.0),(pp,refracted))
                     Nothing -> Nothing
 
@@ -293,17 +282,20 @@ reflect :: Vec3 -> Vec3 -> Vec3
 reflect v n = v - (n*(realToFrac (v `dot` n))*(realToFrac 2.0))
 
 refract :: Vec3 -> Vec3 -> Double -> Maybe Vec3
-refract v n ni_over_nt = 
+refract v n ni_over_nt =
     let uv   = unit_vector v
         dt   = uv `dot` n
         disc = 1.0 - ni_over_nt*ni_over_nt*(1.0-dt*dt)
     in if disc > 0 then
         Just ((uv - n*(realToFrac dt))*(realToFrac ni_over_nt) - n*(realToFrac (sqrt disc)))
-    else 
+    else
         Nothing
 
 schlick :: Double -> Double -> Double
 schlick cosine ref_idx =
     let r0 = (1-ref_idx) / (1+ref_idx)
         rr = r0*r0
-    in  (rr - (1-rr)*((1.0-cosine)^^5))     
+    in  (rr - (1-rr)*((1.0-cosine)^^5))
+
+main :: IO ()
+main = render
