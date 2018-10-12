@@ -49,7 +49,8 @@ squaredNorm v = v `dot` v
 
 -- | Return the cross product of two vectors
 cross :: Vec3 -> Vec3 -> Vec3
-cross (x1, y1, z1) (x2, y2, z2) = ((y1*z2-z1*y2), (-x1*z2 - z1*x2), (x1*y2 - y1*x2))
+cross (x1, y1, z1) (x2, y2, z2) =
+    ((y1*z2 - z1*y2), -(x1*z2 - z1*x2), (x1*y2 - y1*x2))
 
 -- | Return the input vector normalized to unit length
 normalize :: Vec3 -> Vec3
@@ -229,6 +230,7 @@ schlick cosine refIdx =
 -- | An infinite list of random 'Double's in the range [0.0, 1.0).
 -- The list being infinite is not checked!
 type RNG = [Double]
+
 
 -- | Create an infinite list of random 'Double's in the range [0.0, 1.0).
 -- The interval being half-open is important, since it can avoid division by
