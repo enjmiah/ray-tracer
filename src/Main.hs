@@ -150,7 +150,7 @@ randPixel cam world x y s =
 skyColor :: Ray -> Vec3
 skyColor ray =
     let (_, y, _) = normalize (direction ray)
-        blend = 0.5 * y + 1.0 -- map [-1, 1] to [0, 1]
+        blend = 0.5 * (y + 1.0) -- map [-1, 1] to [0, 1]
     in (1 - blend) .* (1.0, 1.0, 1.0) + blend .* (0.5, 0.7, 1.0)
 
 
