@@ -32,7 +32,8 @@ maxBounces = 8 -- ^ Maximum number of recursive bounces a ray is allowed before
 
 --- Define camera location and image plane
 camera :: Camera
-camera = Camera (-2.0, -1.0, -1.0) (4.0, 0.0, 0.0) (0.0, 2.0, 0.0) (0.0, 0.0, 0.0)
+camera = makeCamera (-2, 2, 1) (0, 0, -1) (0, 1, 0) (pi / 8)
+                    ((fromIntegral nx) / (fromIntegral ny))
 
 ground :: Primitive
 ground  = makeSphere (0.0,-100.5,-1.0) 100.0 (makeDiffuse (0.8, 0.8, 0.0))
@@ -54,6 +55,27 @@ data Camera = Camera { lowl :: Vec3
                      , orig :: Vec3 } deriving (Show, Eq)
 
 
+-- | Create a camera with the given parameters.
+makeCamera :: Vec3 -> Vec3 -> Vec3 -> Double -> Double -> Camera
+makeCamera position -- ^ Location of the camera in world space
+           focus -- ^ Focal point
+           up -- ^ Vector which points "up" from the perspective of the camera
+           vfov -- ^ Vertical field of view in radians
+           aspect -- ^ Aspect ratio (width / height)
+           =
+    let theta = vfov
+        halfHeight = tan (theta / 2)
+        halfWidth = aspect * halfHeight
+        -- u, v, w form a basis for camera space
+        w = normalize (position - focus)
+        u = normalize (up `cross` w)
+        v = w `cross` u -- cross product of unit vectors is unit length
+    in Camera { lowl = position - halfWidth .* u - halfHeight .* v - w
+              , horz = 2 * halfWidth .* u
+              , vert = 2 * halfHeight .* v
+              , orig = position }
+
+
 -- Get image with true color pixels from manifest Repa array.
 toImage :: R.Array U R.DIM2 Vec3 -> Image PixelRGB16
 toImage a = generateImage gen width height
@@ -67,9 +89,8 @@ toImage a = generateImage gen width height
 
 --- get ray from camera to point u v on image plane
 getRay :: Camera -> Double -> Double -> Ray
-getRay cam u v =
-    ((orig cam),
-     (lowl cam) + (u .* (horz cam)) + (v .* (vert cam)) - (orig cam))
+getRay (Camera lowl horz vert orig) u v =
+    (orig, lowl + u .* horz + v .* vert - orig)
 
 
 --- ask for path to save rendered image on then compute the image
@@ -114,7 +135,7 @@ generateImgRepa = R.fromFunction (Z :. nx :. ny) (calcPixelAt camera world)
 rngs :: Array Int RNG
 rngs = listArray (0, count)
                  (take count [mkRNG seed | seed <- randoms (mkStdGen 0)])
-    where count = ny * nx * ns + nx * ns + ns
+    where count = ny * nx * ns + nx * ns + ns - 1
 
 
 -- | Get the RNG for a given sample.
