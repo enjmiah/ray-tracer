@@ -17,9 +17,10 @@ cabal-version:       >=1.10
 
 executable ray-tracer
   main-is:             Main.hs
-  -- other-modules:
+  other-modules:       Trace
   -- other-extensions:
   build-depends:       base >=4.9 && <4.10,
+                       array,
                        filepath,
                        random,
                        JuicyPixels >=3.3.2,
