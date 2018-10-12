@@ -32,8 +32,8 @@ maxBounces = 8 -- ^ Maximum number of recursive bounces a ray is allowed before
 
 --- Define camera location and image plane
 camera :: Camera
-camera = makeCamera (-2, 2, 1) (0, 0, -1) (0, 1, 0) (pi / 8)
-                    ((fromIntegral nx) / (fromIntegral ny))
+camera = makeCamera (3, 3, 2) (0, 0, -1) (0, 1, 0) 0.35
+                    ((fromIntegral nx) / (fromIntegral ny)) 2
 
 ground :: Primitive
 ground  = makeSphere (0.0,-100.5,-1.0) 100.0 (makeDiffuse (0.8, 0.8, 0.0))
@@ -52,28 +52,35 @@ world = [sphere1,sphere2,sphere3,ground]
 data Camera = Camera { lowl :: Vec3
                      , horz :: Vec3
                      , vert :: Vec3
-                     , orig :: Vec3 } deriving (Show, Eq)
+                     , orig :: Vec3
+                     , lensRad :: Double
+                     , basis :: (Vec3, Vec3, Vec3) } deriving (Show, Eq)
 
 
 -- | Create a camera with the given parameters.
-makeCamera :: Vec3 -> Vec3 -> Vec3 -> Double -> Double -> Camera
+makeCamera :: Vec3 -> Vec3 -> Vec3 -> Double -> Double -> Double -> Camera
 makeCamera position -- ^ Location of the camera in world space
            focus -- ^ Focal point
            up -- ^ Vector which points "up" from the perspective of the camera
            vfov -- ^ Vertical field of view in radians
            aspect -- ^ Aspect ratio (width / height)
+           aperture -- ^ Diameter of the lens
            =
     let theta = vfov
         halfHeight = tan (theta / 2)
         halfWidth = aspect * halfHeight
+        focusDist = norm (position - focus)
         -- u, v, w form a basis for camera space
         w = normalize (position - focus)
         u = normalize (up `cross` w)
         v = w `cross` u -- cross product of unit vectors is unit length
-    in Camera { lowl = position - halfWidth .* u - halfHeight .* v - w
-              , horz = 2 * halfWidth .* u
-              , vert = 2 * halfHeight .* v
-              , orig = position }
+    in Camera { lowl = (position - halfWidth * focusDist .* u
+                        - halfHeight * focusDist .* v - focusDist .* w)
+              , horz = 2 * halfWidth * focusDist .* u
+              , vert = 2 * halfHeight * focusDist .* v
+              , orig = position
+              , lensRad = aperture / 2
+              , basis = (u, v, w) }
 
 
 -- Get image with true color pixels from manifest Repa array.
@@ -88,9 +95,11 @@ toImage a = generateImage gen width height
 
 
 --- get ray from camera to point u v on image plane
-getRay :: Camera -> Double -> Double -> Ray
-getRay (Camera lowl horz vert orig) u v =
-    (orig, lowl + u .* horz + v .* vert - orig)
+getRay :: Camera -> Double -> Double -> RNG -> (Ray, RNG)
+getRay (Camera lowl horz vert orig lensRad (u, v, _)) s t rng =
+    let ((randX, randY), newRng) = randomInUnitDisk rng
+        offset = lensRad * randX .* u + lensRad * randY .* v
+    in ((orig + offset, lowl + s .* horz + t .* vert - orig - offset), newRng)
 
 
 --- ask for path to save rendered image on then compute the image
@@ -160,11 +169,11 @@ aaPixel cam world x y =
 --- helper for aaPixel generate a pixel vec with random pertubation to ray
 randPixel :: Camera -> [Primitive] -> Int -> Int -> Int -> Vec3
 randPixel cam world x y s =
-    let (xrand:yrand:tail) = getRNG x y s
+    let (xrand:yrand:newRng) = getRNG x y s
         u   = ((fromIntegral x) + xrand) / (fromIntegral nx)
         v   = ((fromIntegral y) + yrand) / (fromIntegral ny)
-        ray = getRay cam u v
-    in colorPixel ray world maxBounces tail
+        (ray, newRng2) = getRay cam u v newRng
+    in colorPixel ray world maxBounces newRng2
 
 
 -- | Return the sky color in the direction of an outgoing ray.

@@ -249,3 +249,13 @@ randomInUnitSphere rng =
         vec = (x,y,z)
         len = squaredNorm vec
     in if len >= 1 then randomInUnitSphere tl else (vec, tl)
+
+
+-- | Return a random point inside a 2D unit disk centered at the origin.
+randomInUnitDisk :: RNG -> ((Double, Double), RNG)
+randomInUnitDisk rng
+    | normSq < 1 = (point, tl)
+    | otherwise  = randomInUnitDisk tl
+    where (x:y:tl) = rng
+          point = (2 * x - 1, 2 * y - 1)
+          normSq = fst point * fst point + snd point * snd point
