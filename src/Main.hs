@@ -2,178 +2,142 @@
 Interface for rendering images using the ray-tracer.
 -}
 
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE TypeOperators #-}
 
 module Main where
 
 import Codec.Picture
-import Data.Array (Array, listArray)
-import Data.Array.Repa (U, D, Z (..), (:.)(..), (!))
-import System.Random
-import qualified Data.Array ((!))
+import Data.Array.Repa (Z (..), (:.)(..))
+import System.Console.GetOpt
+import System.Environment (getArgs)
+import Text.Read
+import Unsafe.Coerce (unsafeCoerce)
 import qualified Data.Array.Repa as R
 
+import Scene (world, skyColor1, skyColor2)
 import Trace
 
 
+-- | Infinity
 inf :: Floating a => a
 inf = 1.0 / 0.0
 
-nx :: Int
-nx = 200 -- ^ Width of final image output
-ny :: Int
-ny = 100 -- ^ Height of final image output
-ns :: Int
-ns = 16 -- ^ Number of anti-aliasing samples to take per pixel
-maxBounces :: Int
-maxBounces = 8 -- ^ Maximum number of recursive bounces a ray is allowed before
-               -- it is terminated
+
+-- | Render options
+data Options = Options {
+    -- | Number of anti-aliasing samples to take per pixel
+    samples :: Int,
+    -- | Maximum number of recursive bounces a ray is allowed before it is
+    -- terminated
+    maxBounces :: Int,
+    -- | Output file
+    output :: String
+} deriving (Show, Eq)
+
+-- | Options to use when not overridden by the user
+defaultOptions :: Options
+defaultOptions = Options {
+    samples=16, maxBounces=8, output="out.png"
+}
 
 
---- Define camera location and image plane
-camera :: Camera
-camera = makeCamera (3, 3, 2) (0, 0, -1) (0, 1, 0) 0.35
-                    ((fromIntegral nx) / (fromIntegral ny)) 2
-
-ground :: Primitive
-ground  = makeSphere (0.0,-100.5,-1.0) 100.0 (makeDiffuse (0.8, 0.8, 0.0))
-sphere1 :: Primitive
-sphere1 = makeSphere (0.0, 0.0, -1.0) 0.5 (makeDiffuse (0.1, 0.2, 0.5))
-sphere2 :: Primitive
-sphere2 = makeSphere (1.0, 0.0, -1.0) 0.5 (makeMetallic (0.8, 0.6, 0.2) 0.3)
-sphere3 :: Primitive
-sphere3 = makeSphere (-1.0, 0.0, -1.0) 0.5 (makeRefractive 1.5)
-
--- | List of primitives making up world
-world :: [Primitive]
-world = [sphere1,sphere2,sphere3,ground]
+-- | Parse an option string into a positive integer.  Raises an error if such an
+-- operation is not possible.
+parsePositiveInt :: String -> String -> Int
+parsePositiveInt str optName =
+    case (readMaybe str :: Maybe Int) of
+        Just x -> if x > 0 then x else error errorMsg
+        Nothing -> error errorMsg
+    where errorMsg = optName ++ " option must be a positive integer"
 
 
-data Camera = Camera { lowl :: Vec3
-                     , horz :: Vec3
-                     , vert :: Vec3
-                     , orig :: Vec3
-                     , lensRad :: Double
-                     , basis :: (Vec3, Vec3, Vec3) } deriving (Show, Eq)
+-- | Available command-line options for our program.
+options :: [OptDescr (Options -> Options)]
+options = [
+    Option "s" ["samples"]
+           (ReqArg (\ ns opts -> opts { samples = parsePositiveInt ns "samples" })
+                   "SAMPLES")
+           "Number of anti-aliasing samples to take per pixel",
+    Option "b" ["bounces"]
+           (ReqArg (\ b opts -> opts { maxBounces = parsePositiveInt b "bounces" })
+                   "BOUNCES")
+           "Maximum number of recursive bounces a ray is allowed before it is terminated",
+    Option "o" ["output"]
+           (ReqArg (\ f opts -> opts { output = f }) "FILE")
+           "Output file (should end in \"png\")"
+    ]
 
 
--- | Create a camera with the given parameters.
-makeCamera :: Vec3 -> Vec3 -> Vec3 -> Double -> Double -> Double -> Camera
-makeCamera position -- ^ Location of the camera in world space
-           focus -- ^ Focal point
-           up -- ^ Vector which points "up" from the perspective of the camera
-           vfov -- ^ Vertical field of view in radians
-           aspect -- ^ Aspect ratio (width / height)
-           aperture -- ^ Diameter of the lens
-           =
-    let theta = vfov
-        halfHeight = tan (theta / 2)
-        halfWidth = aspect * halfHeight
-        focusDist = norm (position - focus)
-        -- u, v, w form a basis for camera space
-        w = normalize (position - focus)
-        u = normalize (up `cross` w)
-        v = w `cross` u -- cross product of unit vectors is unit length
-    in Camera { lowl = (position - halfWidth * focusDist .* u
-                        - halfHeight * focusDist .* v - focusDist .* w)
-              , horz = 2 * halfWidth * focusDist .* u
-              , vert = 2 * halfHeight * focusDist .* v
-              , orig = position
-              , lensRad = aperture / 2
-              , basis = (u, v, w) }
-
-
--- Get image with true color pixels from manifest Repa array.
-toImage :: R.Array U R.DIM2 Vec3 -> Image PixelRGB16
+-- | Get image with true color pixels from manifest Repa array.
+toImage :: R.Array R.U R.DIM2 Vec3 -> Image PixelRGB16
 toImage a = generateImage gen width height
-  where
-    Z :. width :. height = R.extent a
-    s = round.(max 0).(min 0xffff)
-    gen x y =
-        let (red,green,blue) = a ! (Z :. x :. y)
-        in PixelRGB16 (s red) (s green) (s blue)
+    where Z :. width :. height = R.extent a
+          s = round . (max 0) . (min 0xffff)
+          gen x y =
+              let (red,green,blue) = a R.! (Z :. x :. y)
+              in PixelRGB16 (s red) (s green) (s blue)
 
 
---- get ray from camera to point u v on image plane
+-- | Get ray from camera to point u v on image plane
 getRay :: Camera -> Double -> Double -> RNG -> (Ray, RNG)
-getRay (Camera lowl horz vert orig lensRad (u, v, _)) s t rng =
+getRay (Camera lowl horz vert orig lensRad _ (u, v, _)) s t rng =
     let ((randX, randY), newRng) = randomInUnitDisk rng
         offset = lensRad * randX .* u + lensRad * randY .* v
     in ((orig + offset, lowl + s .* horz + t .* vert - orig - offset), newRng)
 
 
---- ask for path to save rendered image on then compute the image
-render :: IO ()
-render = do
-  putStrLn "Path to save image in?"
-  path <- getLineFixed
-  --- Computes each pixel in //, stores in REPA array of type Array U DIM2 Vec3
-  img <- R.computeUnboxedP generateImgRepa
-  --- Converts to Juicy Pixel ImageRGB16 and saves it to disk as a png
-  (savePngImage path . ImageRGB16 . toImage) img
+-- | Render an image with the provided options (and scene)
+render :: Options -> (Camera, [Primitive]) -> IO ()
+render options world = do
+    -- compute each pixel in //, stores in REPA array
+    img <- R.computeUnboxedP (generateImgRepa world options)
+    -- convert to Juicy Pixel ImageRGB16 and save it to disk as a PNG
+    (savePngImage (output options) . ImageRGB16 . toImage) img
 
 
---- from A3 sol to clean up user input
-getLineFixed :: IO String
-getLineFixed =
-    do
-        line <- getLine
-        return (fixDel line)
+-- | Generate a REPA array of calculated pixel values.
+-- The 'R.D' means the calculation is delayed until we call 'R.computeUnboxedP'
+-- for parallel evaluation, or 'R.computeUnboxedS' for serial.
+generateImgRepa :: (Camera, [Primitive]) -> Options -> R.Array R.D R.DIM2 Vec3
+generateImgRepa !world !options =
+    let (!camera, !primitives) = world
+        (!nx, !ny) = size camera
+    in R.fromFunction (Z :. nx :. ny) (calcPixelAt camera primitives options)
 
 
-fixDel :: String -> String
-fixDel st
-    | '\DEL' `elem` st = fixDel (remDel st)
-    | otherwise = st
-
-
-remDel :: String -> String
-remDel ('\DEL':t) = t
-remDel (_:'\DEL':t) = t
-remDel (_:t) = remDel t
-
-
---- function to generate REPA array of calculated pixel values
---- The D means its delayed, not actually calculated until we call
---- R.computeUnboxedP for parallel, or R.computeUnboxedS for serial
-generateImgRepa :: R.Array D R.DIM2 Vec3
-generateImgRepa = R.fromFunction (Z :. nx :. ny) (calcPixelAt camera world)
-
-
--- | Lazily generate an array of RNGs (one for each AA sample).
-rngs :: Array Int RNG
-rngs = listArray (0, count)
-                 (take count [mkRNG seed | seed <- randoms (mkStdGen 0)])
-    where count = ny * nx * ns + nx * ns + ns - 1
-
-
--- | Get the RNG for a given sample.
-getRNG :: Int -> Int -> Int -> RNG
-getRNG x y s = rngs Data.Array.! (y * nx * ns + x * ns + s)
-
-
---- function to calculate Pixel value at x y in a DIM2 Vec3 array/image plane
-calcPixelAt :: Camera -> [Primitive] -> (Z :. Int :. Int) -> Vec3
-calcPixelAt cam world (Z :. x :. y) =
-    let (red, green, blue) = aaPixel cam world x (ny-y)
+-- | Calculate the pixel value at x y in an image plane.
+calcPixelAt :: Camera -> [Primitive] -> Options -> (Z :. Int :. Int) -> Vec3
+calcPixelAt cam world options (Z :. x :. y) =
+    let (_, ny) = size cam
+        (red, green, blue) = aaSample cam world x (ny - y) options
+    -- convert to an "integer" (will get rounded properly later)
     in (65534.99*(sqrt red), 65534.99*(sqrt green), 65534.99*(sqrt blue))
 
 
--- | Return an anti-aliased pixel.
-aaPixel :: Camera -> [Primitive] -> Int -> Int -> Vec3
-aaPixel cam world x y =
-    let sumColor = sum [randPixel cam world x y s | s <- [1..ns]]
+-- | Return an anti-aliased sample in linear colorspace.  The anti-aliased
+-- sample is calculated as the average of several random samples.
+aaSample :: Camera -> [Primitive] -> Int -> Int -> Options -> Vec3
+aaSample cam world x y options =
+    let ns = samples options
+        (nx, _) = size cam
+        sumColor =
+            sum [randSample cam world x y options
+                            (mkRNG (unsafeCoerce (sin (fromIntegral (20000000000 * (y*nx*ns + x*ns + s)) :: Double)) :: Int))
+                                  | s <- [1..ns]]
     in (1 / fromIntegral ns) .* sumColor
 
 
---- helper for aaPixel generate a pixel vec with random pertubation to ray
-randPixel :: Camera -> [Primitive] -> Int -> Int -> Int -> Vec3
-randPixel cam world x y s =
-    let (xrand:yrand:newRng) = getRNG x y s
+-- | Return a sample in linear colorspace.  The position of the sample will be
+-- randomly jittered slightly based on the RNG.
+randSample :: Camera -> [Primitive] -> Int -> Int -> Options -> RNG -> Vec3
+randSample cam world x y options rng =
+    let (nx, ny) = size cam
+        (xrand:yrand:newRng) = rng
         u   = ((fromIntegral x) + xrand) / (fromIntegral nx)
         v   = ((fromIntegral y) + yrand) / (fromIntegral ny)
         (ray, newRng2) = getRay cam u v newRng
-    in colorPixel ray world maxBounces newRng2
+    in intersect ray world (maxBounces options) newRng2
 
 
 -- | Return the sky color in the direction of an outgoing ray.
@@ -181,12 +145,12 @@ skyColor :: Ray -> Vec3
 skyColor ray =
     let (_, y, _) = normalize (direction ray)
         blend = 0.5 * (y + 1.0) -- map [-1, 1] to [0, 1]
-    in (1 - blend) .* (1.0, 1.0, 1.0) + blend .* (0.5, 0.7, 1.0)
+    in (1 - blend) .* skyColor2 + blend .* skyColor1
 
 
---- takes ray from camera to point on image plane and produces color
-colorPixel :: Ray -> [Primitive] -> Int -> RNG -> Vec3
-colorPixel ray world maxBounces rng =
+-- | Traces a ray through a scene and produces color
+intersect :: Ray -> [Primitive] -> Int -> RNG -> Vec3
+intersect ray world maxBounces rng =
     case (hitInList ray 0.001 inf world) of
         Just record ->
             if maxBounces <= 0 then
@@ -194,11 +158,22 @@ colorPixel ray world maxBounces rng =
             else
                 case (matHit record) ray record rng of
                     (Just (atten, scat), newRng) ->
-                        atten * (colorPixel scat world (maxBounces - 1) newRng)
+                        atten * (intersect scat world (maxBounces - 1) newRng)
                     (Nothing, _) -> (0.0, 0.0, 0.0)
         Nothing -> skyColor ray
 
 
 -- | Entry point for executable.
+-- Follows structure of example in
+-- http://hackage.haskell.org/package/base-4.12.0.0/docs/System-Console-GetOpt.html#t:ArgDescr
 main :: IO ()
-main = render
+main = do
+    let header = "Usage: ray-tracer [OPTION...]"
+    argv <- getArgs
+    case getOpt Permute options argv of
+        (opts, _, []) ->
+            do let options = (foldl (flip id) defaultOptions opts)
+               putStrLn (show options)
+               render options world
+        (_, _, errs) ->
+            ioError (userError (concat errs ++ usageInfo header options))

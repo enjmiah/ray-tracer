@@ -15,6 +15,7 @@ import Unsafe.Coerce (unsafeCoerce)
 
 type Vec3 = (Double,Double,Double)
 
+-- Provide +, - for 'Vec3's
 instance (Num a, Num b, Num c) => Num (a, b, c) where
     (x1, y1, z1) + (x2, y2, z2) = (x1+x2, y1+y2, z1+z2)
     (x1, y1, z1) - (x2, y2, z2) = (x1-x2, y1-y2, z1-z2)
@@ -27,13 +28,6 @@ instance (Num a, Num b, Num c) => Num (a, b, c) where
 (.*) :: Double -> Vec3 -> Vec3
 infixl 7 .* -- same as regular *
 s .* (x, y, z) = (s * x, s * y, s * z)
-
-r :: Vec3 -> Double
-r (el, _, _) = el
-g :: Vec3 -> Double
-g (_, el, _) = el
-b :: Vec3 -> Double
-b (_, _, el) = el
 
 -- | Compute the dot product of two 'Vec3's.
 dot :: Vec3 -> Vec3 -> Double
@@ -56,7 +50,7 @@ cross (x1, y1, z1) (x2, y2, z2) =
 normalize :: Vec3 -> Vec3
 normalize v = (1 / norm v) .* v
 
---- Ray, Condiser changing to data record, would involve some refactoring
+-- | Standard mathematical ray consisting of '(origin, direction)'.
 type Ray = (Vec3, Vec3)
 
 -- | Return the origin of a vector.
@@ -67,6 +61,7 @@ origin (o, _) = o
 direction :: Ray -> Vec3
 direction (_, d) = d
 
+-- | Compute the point at the given parameter position along a ray.
 pointAt :: Ray -> Double -> Vec3
 pointAt (o, d) t = o + t .* d
 
@@ -97,18 +92,18 @@ makeSphere center radius material = intersector
           intersector (origin, direction) tMin tMax =
               let oc   = origin - center
                   -- a, b, c, and discriminant as in the quadratic formula
-                  a    = squaredNorm direction
-                  b    = dot oc direction
-                  c    = (dot oc oc) - (radius * radius)
-                  disc = (b * b) - (a * c)
-              in if disc > 0 then
-                  let sqrtDisc = sqrt disc
-                      posRoot = (-b - sqrtDisc) / a
-                      negRoot = (-b + sqrtDisc) / a
-                  in if tMin < posRoot && posRoot < tMax then
-                      Just (genHitRecord posRoot (origin, direction))
-                  else if tMin < negRoot && negRoot < tMax then
-                      Just (genHitRecord negRoot (origin, direction))
+                  a = squaredNorm direction
+                  b = dot oc direction
+                  c = (dot oc oc) - (radius * radius)
+                  discriminant = (b * b) - (a * c)
+              in if discriminant > 0 then
+                  let sqrtDisc = sqrt discriminant
+                      root1 = (-b - sqrtDisc) / a
+                      root2 = (-b + sqrtDisc) / a
+                  in if tMin < root1 && root1 < tMax then
+                      Just (genHitRecord root1 (origin, direction))
+                  else if tMin < root2 && root2 < tMax then
+                      Just (genHitRecord root2 (origin, direction))
                   else
                       Nothing
               else
@@ -122,16 +117,15 @@ makeSphere center radius material = intersector
 
 -- | Returns Just closest hit of ray to list of 'Primitive's or 'Nothing'
 hitInList :: Ray -> Double -> Double -> [Primitive] -> Maybe HitRecord
-hitInList ray tmin tmax list = fst (foldl (hitacc ray tmin) (Nothing, tmax) list)
-
-
---- helper for hit in list
-hitacc :: Ray -> Double -> (Maybe HitRecord, Double) -> Primitive -> (Maybe HitRecord, Double)
-hitacc ray tmin (acc, closest) primitive =
-    let maybehit = primitive ray tmin closest
-    in case maybehit of
-        Just rec -> (Just rec, t rec)
-        Nothing -> (acc, closest)
+hitInList ray tmin tmax list =
+    fst (foldl (hitacc ray tmin) (Nothing, tmax) list)
+    where hitacc :: Ray -> Double -> (Maybe HitRecord, Double) -> Primitive
+                        -> (Maybe HitRecord, Double)
+          hitacc ray tmin (acc, closest) primitive =
+              let maybehit = primitive ray tmin closest
+              in case maybehit of
+                  Just rec -> (Just rec, t rec)
+                  Nothing -> (acc, closest)
 
 
 -- | Make an ideal Lambertian diffuse material with the given albedo colour.
@@ -201,10 +195,14 @@ makeRefractive refIdx = scatter
                       Nothing -> (Nothing, newRng)
 
 
+-- | Reflect the vector 'v' across 'n'.
 reflect :: Vec3 -> Vec3 -> Vec3
 reflect v n = v - (2 * (v `dot` n)) .* n
 
 
+-- | Refract a vector through a surface with normal 'n'.  If refraction is
+-- impossible due to Snell's law not having a solution (this usually means total
+-- internal reflection), return 'Nothing'.
 refract :: Vec3 -> Vec3 -> Double -> Maybe Vec3
 refract v n etaIOverEtaT =
     let uv   = normalize v
@@ -216,11 +214,54 @@ refract v n etaIOverEtaT =
         Nothing
 
 
+-- | Compute Shlick's approximation to the Fresnel factor based on the given
+-- refractive index.
 schlick :: Double -> Double -> Double
 schlick cosine refIdx =
     let r0 = (1-refIdx) / (1+refIdx)
         rr = r0*r0
     in  (rr - (1 - rr) * ((1 - cosine) ** 5))
+
+
+------------
+-- Camera --
+------------
+
+data Camera = Camera { lowl :: Vec3
+                     , horz :: Vec3
+                     , vert :: Vec3
+                     , orig :: Vec3
+                     , lensRad :: Double
+                     , size :: (Int, Int)
+                     , basis :: (Vec3, Vec3, Vec3) } deriving (Show, Eq)
+
+
+-- | Create a camera with the given parameters.
+makeCamera :: Vec3 -> Vec3 -> Vec3 -> Double -> (Int, Int) -> Double -> Camera
+makeCamera position -- ^ Location of the camera in world space
+           focus -- ^ Focal point
+           up -- ^ Vector which points "up" from the perspective of the camera
+           vfov -- ^ Vertical field of view in radians
+           (width, height) -- ^ Size in pixels of final output image
+           aperture -- ^ Diameter of the lens
+           =
+    let theta = vfov
+        halfHeight = tan (theta / 2)
+        aspect = ((fromIntegral width) / (fromIntegral height)) :: Double
+        halfWidth = aspect * halfHeight
+        focusDist = norm (position - focus)
+        -- u, v, w form a basis for camera space
+        w = normalize (position - focus)
+        u = normalize (up `cross` w)
+        v = w `cross` u -- cross product of unit vectors is unit length
+    in Camera { lowl = (position - halfWidth * focusDist .* u
+                        - halfHeight * focusDist .* v - focusDist .* w)
+              , horz = 2 * halfWidth * focusDist .* u
+              , vert = 2 * halfHeight * focusDist .* v
+              , orig = position
+              , size = (width, height)
+              , lensRad = aperture / 2
+              , basis = (u, v, w) }
 
 
 ------------
