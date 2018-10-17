@@ -1,6 +1,8 @@
 ray-tracer
 ==========
 
+[![Build Status](https://travis-ci.com/enjmiah/ray-tracer.svg?branch=master)](https://travis-ci.com/enjmiah/ray-tracer)
+
 A path tracer written in Haskell, based on [Peter Shirley's notes][shirley].
 
 
