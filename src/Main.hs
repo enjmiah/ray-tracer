@@ -115,6 +115,15 @@ calcPixelAt cam world options (Z :. x :. y) =
     in (65534.99*(sqrt red), 65534.99*(sqrt green), 65534.99*(sqrt blue))
 
 
+-- | Given a range of integer inputs, return integer outputs that appear to be
+-- uncorrelated to the supplied inputs.  We use this function to generate
+-- "random" seeds.
+decorrelate :: Int -> Int
+decorrelate x =
+    -- very high-frequency sine works well here for producing "random-ness"
+    unsafeCoerce (sin (fromIntegral (20000000000 * x) :: Double))
+
+
 -- | Return an anti-aliased sample in linear colorspace.  The anti-aliased
 -- sample is calculated as the average of several random samples.
 aaSample :: Camera -> [Primitive] -> Int -> Int -> Options -> Vec3
@@ -123,8 +132,8 @@ aaSample cam world x y options =
         (nx, _) = size cam
         sumColor =
             sum [randSample cam world x y options
-                            (mkRNG (unsafeCoerce (sin (fromIntegral (20000000000 * (y*nx*ns + x*ns + s)) :: Double)) :: Int))
-                                  | s <- [1..ns]]
+                            (mkRNG (decorrelate (y*nx*ns + x*ns + s)))
+                            | s <- [1..ns]]
     in (1 / fromIntegral ns) .* sumColor
 
 
