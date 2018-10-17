@@ -18,9 +18,9 @@ cabal-version:       >=1.10
 executable ray-tracer
   main-is:             Main.hs
   other-modules:       Trace, Scene
-  GHC-Options:         -Wall -Wno-name-shadowing -Wno-orphans -Odph -rtsopts -threaded -fno-liberate-case -optlo-O3
+  GHC-Options:         -Wall -Wno-name-shadowing -Wno-orphans -rtsopts -threaded -fno-liberate-case -fno-state-hack
   -- other-extensions:
-  build-depends:       base >=4.9 && <4.10,
+  build-depends:       base >=4.9,
                        filepath,
                        random,
                        JuicyPixels >=3.3.2,
