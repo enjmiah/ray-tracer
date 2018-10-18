@@ -40,7 +40,7 @@ world1 =
           sphere1 = makeSphere (0.0, 0.0, -1.0) 0.5 (makeDiffuse (0.1, 0.2, 0.5))
           sphere2 = makeSphere (1.0, 0.0, -1.0) 0.5 (makeMetallic (0.8, 0.6, 0.2) 0.3)
           sphere3 = makeSphere (-1.0, 0.0, -1.0) 0.5 (makeRefractive 1.5)
-          camera = makeCamera (3, 3, 2) (0, 0, -1) (0, 1, 0) 0.35 (200, 100) 2 
+          camera = makeCamera (3, 3, 2) (0, 0, -1) (0, 1, 0) 0.35 (200, 100) 2
 
 
 -- | Create several random spheres with random materials.
@@ -72,7 +72,7 @@ randomMaterial rng
 world2 :: World
 world2 =
     (camera, [ground, sphere1, sphere2, sphere3] ++ randomScene (mkRNG 7))
-    where camera = makeCamera (13, 2, 3) (0, 0, 0) (0, 1, 0) 0.35 (300, 200) 0.2 
+    where camera = makeCamera (13, 2, 3) (0, 0, 0) (0, 1, 0) 0.35 (300, 200) 0.2
           ground = makeSphere (0, -1000, 0) 1000 (makeDiffuse (0.5, 0.5, 0.5))
           sphere1 = makeSphere (0, 1, 0) 1 (makeRefractive 1.5)
           sphere2 = makeSphere (-4, 1, 0) 1 (makeDiffuse (0.4, 0.2, 0.1))
@@ -89,4 +89,4 @@ world3 =
           sphere1 = makeSphere (0.0, 0.0, -1.0) 0.5 (makeDiffuse (16, 8, 0.5))
           sphere2 = makeSphere (1.0, 0.0, -1.0) 0.5 (makeMetallic (0.8, 0.6, 0.2) 0.3)
           sphere3 = makeSphere (-1.0, 0.0, -1.0) 0.5 (makeRefractive 1.5)
-          camera = makeCamera (3, 3, 2) (0, 0, -1) (0, 1, 0) 0.35 (200, 100) 0.01 
+          camera = makeCamera (3, 3, 2) (0, 0, -1) (0, 1, 0) 0.35 (200, 100) 0.01
