@@ -32,13 +32,15 @@ data Options = Options {
     -- terminated
     maxBounces :: Int,
     -- | Output file
-    output :: String
+    output :: String,
+    -- | Gamma correction
+    gamma :: Double
 } deriving (Show, Eq)
 
 -- | Options to use when not overridden by the user
 defaultOptions :: Options
 defaultOptions = Options {
-    samples=16, maxBounces=8, output="out.png"
+    samples=16, maxBounces=8, output="out.png", gamma = 2.2
 }
 
 
@@ -50,6 +52,13 @@ parsePositiveInt str optName =
         Just x -> if x > 0 then x else error errorMsg
         Nothing -> error errorMsg
     where errorMsg = optName ++ " option must be a positive integer"
+
+parsePositiveDouble :: String -> String -> Double
+parsePositiveDouble str optName =
+    case (readMaybe str :: Maybe Double) of
+        Just x -> if x > 0.0 then x else error errorMsg
+        Nothing -> error errorMsg
+    where errorMsg = optName ++ " option must be a positive Double"    
 
 
 -- | Available command-line options for our program.
@@ -65,7 +74,11 @@ options = [
            "Maximum number of recursive bounces a ray is allowed before it is terminated",
     Option "o" ["output"]
            (ReqArg (\ f opts -> opts { output = f }) "FILE")
-           "Output file (should end in \"png\")"
+           "Output file (should end in \"png\")",
+    Option "g" ["gamma"]
+            (ReqArg (\ g opts -> opts { gamma = parsePositiveDouble g "gamma" })
+                   "BOUNCES")
+           "Gamma correction applied to rendered image"
     ]
 
 
@@ -81,7 +94,7 @@ toImage a = generateImage gen width height
 
 -- | Get ray from camera to point u v on image plane
 getRay :: Camera -> Double -> Double -> RNG -> (Ray, RNG)
-getRay (Camera lowl horz vert orig lensRad _ (u, v, _)) s t rng =
+getRay (Camera lowl horz vert orig lensRad _ (u, v, _) ) s t rng =
     let ((randX, randY), newRng) = randomInUnitDisk rng
         offset = lensRad * randX .* u + lensRad * randY .* v
     in ((orig + offset, lowl + s .* horz + t .* vert - orig - offset), newRng)
@@ -112,7 +125,7 @@ calcPixelAt cam world options (Z :. x :. y) =
     let (_, ny) = size cam
         (red, green, blue) = aaSample cam world x (ny - y) options
     -- convert to an "integer" (will get rounded properly later)
-    in (65534.99*(sqrt red), 65534.99*(sqrt green), 65534.99*(sqrt blue))
+    in (65534.99*(red ** (1.0 / (gamma options))), 65534.99*(green ** (1.0/(gamma options))), 65534.99*(blue ** (1.0/(gamma options))) )
 
 
 -- | Given a range of integer inputs, return integer outputs that appear to be

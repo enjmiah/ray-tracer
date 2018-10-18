@@ -13,9 +13,10 @@ import Unsafe.Coerce (unsafeCoerce)
 -- Math --
 ----------
 
+-- | type for most calculations in ray tracer 
 type Vec3 = (Double,Double,Double)
 
--- Provide +, - for 'Vec3's
+-- | Provide +, - for 'Vec3's
 instance (Num a, Num b, Num c) => Num (a, b, c) where
     (x1, y1, z1) + (x2, y2, z2) = (x1+x2, y1+y2, z1+z2)
     (x1, y1, z1) - (x2, y2, z2) = (x1-x2, y1-y2, z1-z2)
@@ -226,7 +227,7 @@ schlick cosine refIdx =
 ------------
 -- Camera --
 ------------
-
+-- | Record type for camera location, orientation, view plane.
 data Camera = Camera { lowl :: Vec3
                      , horz :: Vec3
                      , vert :: Vec3
