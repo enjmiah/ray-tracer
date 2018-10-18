@@ -4,9 +4,7 @@ Module for performing path tracing.
 
 module Trace where
 
-import Data.Int (Int64)
 import System.Random
-import Unsafe.Coerce (unsafeCoerce)
 
 
 ----------
@@ -277,9 +275,9 @@ type RNG = [Double]
 -- The interval being half-open is important, since it can avoid division by
 -- zero problems.
 mkRNG :: Int -> RNG
-mkRNG seed = randomRs (0.0, prevToOne) (mkStdGen seed)
-    where prevToOne :: Double -- largest Double < 1.0
-          prevToOne = unsafeCoerce (((unsafeCoerce (1 :: Double)) :: Int64) - 1)
+mkRNG seed = randomRs (0.0, oneMinusEpsilon) (mkStdGen seed)
+    where oneMinusEpsilon :: Double -- largest Double < 1.0
+          oneMinusEpsilon = 0.99999999999999989
 
 
 -- | Return a random vector inside a unit sphere.  The passed in RNG *must* be
