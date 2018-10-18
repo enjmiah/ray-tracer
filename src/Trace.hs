@@ -13,7 +13,7 @@ import Unsafe.Coerce (unsafeCoerce)
 -- Math --
 ----------
 
--- | type for most calculations in ray tracer 
+-- | type for most calculations in ray tracer, Colours, Vectors, points etc. 
 type Vec3 = (Double,Double,Double)
 
 

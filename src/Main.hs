@@ -53,7 +53,8 @@ parsePositiveInt str optName =
         Nothing -> error errorMsg
     where errorMsg = optName ++ " option must be a positive integer"
 
-
+-- | Parse an option string into a positive Double.  Raises an error if such an
+-- operation is not possible.
 parsePositiveDouble :: String -> String -> Double
 parsePositiveDouble str optName =
     case (readMaybe str :: Maybe Double) of
@@ -77,7 +78,7 @@ options = [
            "Output file (should end in \"png\")",
     Option "g" ["gamma"]
             (ReqArg (\ g opts -> opts { gamma = parsePositiveDouble g "gamma" })
-                   "BOUNCES")
+                   "GAMMA")
            "Gamma correction applied to rendered image"
     ]
 
@@ -125,7 +126,7 @@ calcPixelAt cam world options (Z :. x :. y) =
     let (_, ny) = size cam
         (red, green, blue) = aaSample cam world x (ny - y) options
     -- convert to an "integer" (will get rounded properly later)
-    in (65534.99*(red ** (1.0 / (gamma options))), 65534.99*(green ** (1.0/(gamma options))), 65534.99*(blue ** (1.0/(gamma options))) )
+    in 65534.99.*((red ** (1/(gamma options))), (green ** (1/(gamma options))), (blue ** (1/(gamma options))) )
 
 
 
