@@ -12,7 +12,6 @@ import Data.Array.Repa (Z (..), (:.)(..))
 import System.Console.GetOpt
 import System.Environment (getArgs)
 import Text.Read
-import Unsafe.Coerce (unsafeCoerce)
 import qualified Data.Array.Repa as R
 
 import Scene (world, skyColor1, skyColor2)
@@ -121,7 +120,8 @@ calcPixelAt cam world options (Z :. x :. y) =
 decorrelate :: Int -> Int
 decorrelate x =
     -- very high-frequency sine works well here for producing "random-ness"
-    unsafeCoerce (sin (fromIntegral (20000000000 * x) :: Double))
+    floor (maxInt * (sin (fromIntegral (2000000000 * x) :: Double)))
+    where maxInt = fromIntegral (maxBound :: Int)
 
 
 -- | Return an anti-aliased sample in linear colorspace.  The anti-aliased
